@@ -9,7 +9,7 @@ from dotenv import load_dotenv
 from pydantic_ai import Agent, ModelMessage, RunContext
 from langfuse import get_client
 
-from .tools import git_tools
+from .tools import git_tools, glob_tools, grep_tools, read_tools
 
 # Load environment variables from .env file
 load_dotenv()
@@ -83,6 +83,10 @@ def create_agent(model: str = "claude-sonnet-4-5-20250929") -> Agent[AgentDeps, 
             "  • get_git_info - Repository status and branches\n"
             "  • show_git_diff - View changes (working dir OR branch comparisons)\n"
             "  • checkout_branch - Switch branches/tags\n\n"
+            "File Operations:\n"
+            "  • search_files - Find files (glob patterns: '**/*.py')\n"
+            "  • search_content - Search code (regex patterns)\n"
+            "  • read_file - Read file contents\n\n"
             "📍 DEMO WORKFLOW (Step-by-Step Branches):\n"
             "This repository uses step branches: step/step-0, step/step-1, step/step-2, etc.\n"
             "Each step demonstrates incremental feature development.\n\n"
@@ -188,6 +192,145 @@ def create_agent(model: str = "claude-sonnet-4-5-20250929") -> Agent[AgentDeps, 
         """
         import asyncio
         return await asyncio.to_thread(git_tools.git_checkout, branch_or_tag)
+
+    @agent.tool
+    async def search_files(ctx: RunContext[AgentDeps], pattern: str) -> str:
+        """Search for files matching a glob pattern.
+
+        Use this when the user asks to:
+        - Find files by name or extension
+        - List files in a directory
+        - Search for specific file types
+        - Locate files matching a pattern
+
+        IMPORTANT - Supported glob patterns:
+            * - matches any characters in a filename
+            ** - matches directories recursively
+            ? - matches a single character
+            [abc] - matches any character in brackets
+
+        IMPORTANT - NOT supported:
+            {a,b} - brace expansion (shell feature, not available in Python glob)
+            For OR patterns, make separate search_files calls instead
+
+        Args:
+            pattern: Glob pattern to match files (e.g., "**/*.py", "src/**/*.ts", "*.md")
+                    Use ** for recursive search, * for any characters in filename
+                    Do NOT use brace expansion like {*.py,*.ts}
+
+        Returns:
+            String with formatted list of matching files with metadata (size, modification time)
+
+        Examples:
+            - "**/*.py" - All Python files recursively
+            - "src/**/*.ts" - TypeScript files in src/ directory
+            - "*.md" - Markdown files in current directory
+            - "tests/**/test_*.py" - Test files in tests/ directory
+        """
+        import asyncio
+
+        def _search():
+            result = glob_tools.glob_files(pattern, ctx.deps.workspace_root)
+            return glob_tools.format_glob_result(result)
+
+        return await asyncio.to_thread(_search)
+
+    @agent.tool
+    async def search_content(
+        ctx: RunContext[AgentDeps],
+        pattern: str,
+        path: str | None = None,
+        include: str | None = None,
+    ) -> str:
+        """Search for regular expression patterns within file contents.
+
+        Use this when the user asks to:
+        - Find specific functions, classes, or variables in code
+        - Locate where certain APIs or patterns are used
+        - Search for import statements or dependencies
+        - Find configuration values or constants
+        - Identify code patterns across multiple files
+
+        Args:
+            pattern: Regular expression pattern to search for (case-insensitive)
+            path: Optional subdirectory to search in (relative to workspace root)
+            include: Optional glob pattern to filter files (e.g., "*.py", "*.{ts,tsx}")
+
+        Returns:
+            String with formatted list of matches showing file, line number, and content
+
+        Examples:
+            - Find function definitions: pattern="def\\s+\\w+", include="*.py"
+            - Find class declarations: pattern="class\\s+\\w+"
+            - Find import statements: pattern="from\\s+\\w+\\s+import"
+            - Search in specific directory: pattern="TODO", path="src"
+            - Filter by file type: pattern="console\\.log", include="*.js"
+
+        Uses a three-tier fallback strategy for best performance:
+        git grep (fastest) → system grep → Python implementation (most compatible)
+        """
+        import asyncio
+
+        def _search():
+            result = grep_tools.grep_content(
+                pattern=pattern,
+                workspace_root=ctx.deps.workspace_root,
+                path=path,
+                include=include,
+            )
+            return grep_tools.format_grep_result(result)
+
+        return await asyncio.to_thread(_search)
+
+    @agent.tool
+    async def read_file(
+        ctx: RunContext[AgentDeps],
+        file_path: str,
+        offset: int | None = None,
+        limit: int | None = None,
+    ) -> str:
+        """Read and return the complete contents of a specific text file.
+
+        Use this when the user asks to:
+        - Read a specific file
+        - View the contents of a file
+        - Examine implementation details
+        - Understand code structure or configuration
+        - Analyze file contents after finding it with search_files or search_content
+
+        Features:
+        - Pagination support for large files (use offset/limit)
+        - Automatic text file detection (rejects binary files)
+        - Security validation (files must be within workspace)
+        - File size limits (max 50MB by default)
+
+        Args:
+            file_path: Relative path from workspace root (e.g., "src/main.py", "README.md")
+            offset: Optional 0-based line number to start reading from (requires limit)
+            limit: Optional maximum number of lines to read (use with offset for pagination)
+
+        Returns:
+            String with file contents and metadata, or error message
+
+        Examples:
+            - Read a file: file_path="src/agent.py"
+            - Read part of large file: file_path="logs/debug.log", offset=100, limit=50
+            - Read config: file_path="pyproject.toml"
+
+        IMPORTANT: Always use relative paths from workspace root, not absolute paths.
+        """
+        import asyncio
+
+        def _read():
+            result = read_tools.read_file(
+                file_path=file_path,
+                workspace_root=ctx.deps.workspace_root,
+                offset=offset,
+                limit=limit,
+            )
+            return read_tools.format_read_result(result, file_path)
+
+        return await asyncio.to_thread(_read)
 
     return agent
 
