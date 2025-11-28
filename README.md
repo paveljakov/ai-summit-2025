@@ -44,15 +44,21 @@ poetry run python -m aisummit_cli
 ### Docker Usage
 
 ```bash
-# Build the container
-docker build -t aisummit-cli .
+# Build the image
+docker compose build
 
-# Run in container
-docker run -it aisummit-cli
+# Run interactive demo shell (recommended)
+docker compose run demo
+# Inside: aisummit, git, java, mvn available system-wide
 
-# Run with API key
-docker run -it -e ANTHROPIC_API_KEY=your_key aisummit-cli
+# Run single query
+docker compose run cli "your query here"
+
+# Development mode with live code mounting
+docker compose run cli-dev
 ```
+
+**Note**: Create a `.env` file with your `ANTHROPIC_API_KEY` before running.
 
 ## 📚 Demo Branch Structure
 
@@ -60,12 +66,12 @@ The repository is organized into incremental branches, each adding new capabilit
 
 | Branch | Description | Features Added |
 |--------|-------------|----------------|
-| `step-0` | Initial setup | Poetry config, project structure, Docker |
-| `step-1` | Agent foundation | Pydantic AI agent, streaming responses, conversation history |
-| `step-2` | Rich TUI | Three-section Textual interface, real-time streaming, markdown rendering |
-| `step-3` | Git tools | `git checkout`, `git diff`, `git log`, `git status` |
-| `step-4` | File tools | `glob`, `grep`, `read_file`, `list_directory` |
-| `step-5` | Final polish | Error handling, Docker optimization, demo scripts |
+| `step/step-0` | Initial setup | Poetry config, project structure, Docker |
+| `step/step-1` | Agent foundation | Pydantic AI agent, streaming responses, conversation history |
+| `step/step-2` | Rich TUI | Three-section Textual interface, real-time streaming, markdown rendering |
+| `step/step-3` | Git tools | `git_status`, `git_branch_list`, `git_log`, `git_diff`, `git_checkout` |
+| `step/step-4` | File tools | `glob_files`, `grep_content`, `read_file` |
+| `step/step-5` | Edit tools | `replace_text` for file editing |
 
 ### Checking Out Demo Steps
 
@@ -74,7 +80,7 @@ The repository is organized into incremental branches, each adding new capabilit
 git branch
 
 # Jump to a specific step
-git checkout step-2
+git checkout step/step-2
 
 # Run the tool at that step
 poetry run aisummit
@@ -82,26 +88,29 @@ poetry run aisummit
 
 ## 🧰 Tools Overview
 
-### Git Tools (step-3)
-- `git_checkout(branch)` - Switch between demo branches
-- `git_diff(file)` - Show code changes
-- `git_log(n)` - View commit history
-- `git_status()` - Check working tree
+### Git Tools (step/step-3)
+- `git_status()` - Check working tree status
+- `git_branch_list()` - List all branches
+- `git_log(count, oneline)` - View commit history
+- `git_diff(file, compare_to)` - Show code changes
+- `git_checkout(branch_or_tag)` - Switch between branches
 
-### File Tools (step-4)
+### File Tools (step/step-4)
 - `glob_files(pattern)` - Find files matching patterns
-- `grep_content(pattern, path)` - Search file contents
-- `read_file(path)` - Display file contents
-- `list_directory(path)` - Browse directories
+- `grep_content(pattern, path)` - Search file contents with regex
+- `read_file(path, start_line, end_line)` - Display file contents
+
+### Edit Tools (step/step-5)
+- `replace_text(file_path, old_string, new_string)` - Edit files with string replacement
 
 ## 🎓 Conference Demo Flow
 
-1. **Introduction** - Show step-0, explain the meta concept
-2. **Agent Setup** - Checkout step-1, demonstrate LLM integration with streaming
-3. **UI Enhancement** - Checkout step-2, show rich TUI with real-time streaming
-4. **Git Tools** - Checkout step-3, use the tool to explore its own git history
-5. **File Tools** - Checkout step-4, search and read the tool's own code
-6. **Live Coding** - Make a small change and watch the tool discover it
+1. **Introduction** - Show step/step-0, explain the meta concept
+2. **Agent Setup** - Checkout step/step-1, demonstrate LLM integration with streaming
+3. **UI Enhancement** - Checkout step/step-2, show rich TUI with real-time streaming
+4. **Git Tools** - Checkout step/step-3, use the tool to explore its own git history
+5. **File Tools** - Checkout step/step-4, search and read the tool's own code
+6. **Edit Tools** - Checkout step/step-5, make changes with replace_text tool
 
 ## 🔒 Safety & Sandboxing
 

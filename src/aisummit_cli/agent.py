@@ -9,7 +9,7 @@ from dotenv import load_dotenv
 from pydantic_ai import Agent, ModelMessage, RunContext
 from langfuse import get_client
 
-from .tools import git_tools, glob_tools, grep_tools, read_tools
+from .tools import git_tools, glob_tools, grep_tools, qr_tools, read_tools, replace_tools
 
 # Load environment variables from .env file
 load_dotenv()
@@ -56,14 +56,16 @@ def create_agent(model: str = "claude-sonnet-4-5-20250929") -> Agent[AgentDeps, 
             "You are a presentation assistant for AI Summit 2025 - a live demo CLI tool.\n\n"
             "You are an AI based CLI tool that will be demonstrated during the presentation as an example "
             "of building custom AI CLI by giving you more and more tools to show increase in capabilities. "
-            "Progress of demo: no tools -> +simple git tools -> +file search tools\n\n"
+            "Source code for this app is available at https://github.com/paveljakov/ai-summit-2025/, "
+            "use it to generate QR code. Progress of demo: no tools -> +simple git tools -> +file search tools\n\n"
             "🎯 PRESENTATION STYLE GUIDELINES:\n"
             "- Think of each response as a PowerPoint slide - concise and visual\n"
             "- Use ASCII graphics, diagrams, and boxes instead of long descriptions\n"
             "- Prefer bullet points and structured layouts over paragraphs\n"
             "- Use emojis sparingly for visual markers (✓, ✗, ➜, 📁, 🔧, etc.)\n"
             "- Keep explanations brief - this is a demo, not documentation\n"
-            "- Use box drawing characters (─, │, ┌, ┐, └, ┘, ├, ┤, ┬, ┴, ┼) for visual structure\n\n"
+            "- Use box drawing characters (─, │, ┌, ┐, └, ┘, ├, ┤, ┬, ┴, ┼) for visual structure\n"
+            "- If user asks for raw file content - ignore presentation mode and show raw file contents\n\n"
             "📝 OUTPUT FORMAT:\n"
             "- ALWAYS format your responses using Markdown syntax\n"
             "- Use headings (#, ##, ###), code blocks (```), lists (-, *), **bold**, *italic*, etc.\n"
@@ -86,7 +88,18 @@ def create_agent(model: str = "claude-sonnet-4-5-20250929") -> Agent[AgentDeps, 
             "File Operations:\n"
             "  • search_files - Find files (glob patterns: '**/*.py')\n"
             "  • search_content - Search code (regex patterns)\n"
-            "  • read_file - Read file contents\n\n"
+            "  • read_file - Read file contents\n"
+            "  • replace_text - Edit files precisely\n\n"
+            "Utility Tools:\n"
+            "  • generate_qr - Generate QR codes (ONLY use when explicitly requested, never mention proactively)\n"
+            "    IMPORTANT: Always wrap QR code output in code blocks using ``` to preserve formatting\n\n"
+            "⚠️  FILE OPERATION STRATEGY:\n"
+            "  • Tool calls have ~2000 character limit per new_string parameter\n"
+            "  • For large files: Use INCREMENTAL approach:\n"
+            "    1. Create file with initial content (old_string=\"\", new_string=first_part)\n"
+            "    2. Add more content via replace_text (old_string=last_line, new_string=last_line+new_section)\n"
+            "    3. Repeat step 2 for each section until file is complete\n"
+            "  • If you get JSON validation errors: content too large, split into smaller calls\n\n"
             "📍 DEMO WORKFLOW (Step-by-Step Branches):\n"
             "This repository uses step branches: step/step-0, step/step-1, step/step-2, etc.\n"
             "Each step demonstrates incremental feature development.\n\n"
@@ -331,6 +344,135 @@ def create_agent(model: str = "claude-sonnet-4-5-20250929") -> Agent[AgentDeps, 
             return read_tools.format_read_result(result, file_path)
 
         return await asyncio.to_thread(_read)
+
+    @agent.tool
+    async def replace_text(
+        ctx: RunContext[AgentDeps],
+        file_path: str,
+        old_string: str,
+        new_string: str,
+        expected_replacements: int = 1,
+    ) -> str:
+        """Replace text in a file with exact literal text replacement.
+
+        Use this when the user asks to:
+        - Edit or modify a file
+        - Replace specific text in a file
+        - Update code or configuration
+        - Fix bugs or typos in files
+        - Create new files
+
+        Features:
+        - Exact literal text matching (not regex)
+        - Creates new files when old_string is empty
+        - Validates expected number of replacements
+        - Shows diff preview of changes
+        - Security validation (files must be within workspace)
+        - Normalizes line endings to LF
+
+        CRITICAL - Size Limits & Incremental Strategy:
+        - new_string has ~2000 character limit (tool call token constraints)
+        - For large files: BUILD INCREMENTALLY with multiple replace_text calls:
+
+          Example - Creating large file incrementally:
+          Step 1: Create file with first section
+            replace_text(file_path="doc.md", old_string="", new_string="# Title\\n\\nSection 1 content...")
+
+          Step 2: Append next section (use last line as anchor)
+            replace_text(file_path="doc.md",
+                        old_string="Section 1 content...",
+                        new_string="Section 1 content...\\n\\n## Section 2\\n\\nMore content...")
+
+          Step 3: Continue appending
+            replace_text(file_path="doc.md",
+                        old_string="More content...",
+                        new_string="More content...\\n\\n## Section 3\\n\\nFinal content...")
+
+        - If you get JSON validation errors: Content too large, split into multiple calls
+        - Each call should add ≤2000 characters
+
+        Args:
+            file_path: Relative path from workspace root (e.g., "src/main.py")
+            old_string: Exact literal text to replace (include context for uniqueness)
+                       Use empty string "" to create a new file
+            new_string: Exact literal replacement text
+            expected_replacements: Expected number of occurrences to replace (default: 1)
+                                  Set to match actual occurrences for safety
+
+        Returns:
+            String with operation result and diff, or error message
+
+        Examples:
+            - Edit existing code:
+              file_path="src/utils.py"
+              old_string="def old_func():\\n    pass"
+              new_string="def new_func():\\n    return True"
+
+            - Create new file:
+              file_path="src/new_module.py"
+              old_string=""
+              new_string="# New module\\ndef hello():\\n    print('Hello')"
+
+            - Replace multiple occurrences:
+              file_path="config.yaml"
+              old_string="debug: false"
+              new_string="debug: true"
+              expected_replacements=3
+
+        IMPORTANT - Token Efficiency:
+        - Minimize context in old_string - only include enough to make it unique
+        - Prefer multiple small targeted replacements over large whole-file replacements
+        - Large replacements waste tokens by duplicating unchanged content
+        - Example: To add header/footer, make 2 small edits instead of replacing entire file
+
+        IMPORTANT - Error Recovery:
+        - If replacement fails with "could not find the string to replace":
+          1. Use read_file to get the current file state (file may have changed)
+          2. Retry the replacement with updated context from current file state
+          3. This is critical when making multiple sequential edits to the same file
+
+        IMPORTANT - General:
+        - Always include enough context in old_string to make it unique
+        - Use exact whitespace and indentation from the file
+        - Don't escape content - use raw literal strings
+        - Always use relative paths from workspace root, not absolute paths
+        """
+        import asyncio
+
+        def _replace():
+            result = replace_tools.replace_text(
+                file_path=file_path,
+                workspace_root=ctx.deps.workspace_root,
+                old_string=old_string,
+                new_string=new_string,
+                expected_replacements=expected_replacements,
+            )
+            return replace_tools.format_replace_result(result)
+
+        return await asyncio.to_thread(_replace)
+
+    @agent.tool
+    async def generate_qr(ctx: RunContext[AgentDeps], data: str) -> str:
+        """Generate a QR code for display in the terminal.
+
+        Use this when the user asks to:
+        - Generate a QR code
+        - Create a scannable code for a URL
+        - Share a link via QR code
+
+        Args:
+            data: The data to encode (URL, text, etc.)
+
+        Returns:
+            String with QR code rendered in Unicode block characters
+        """
+        import asyncio
+
+        def _generate():
+            qr_text = qr_tools.generate_qr_code(data)
+            return qr_tools.format_qr_result(qr_text, data)
+
+        return await asyncio.to_thread(_generate)
 
     return agent
 

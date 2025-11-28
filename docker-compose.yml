@@ -1,0 +1,65 @@
+# AI Summit 2025 CLI - Docker Compose Configuration
+#
+# Three modes available:
+#   1. cli: Run aisummit directly
+#   2. demo: Interactive shell for demos (aisummit available system-wide)
+#   3. cli-dev: Development mode with live code mounting
+#
+# Usage:
+#   docker compose build             # Build image once
+#   docker compose run demo          # Interactive demo shell
+#   docker compose run cli "query"   # Run single query
+#   docker compose run cli-dev       # Development mode
+
+services:
+  # Mode 1: Run aisummit directly
+  cli:
+    image: aisummit-cli:latest
+    build:
+      context: .
+      dockerfile: Dockerfile
+
+    env_file:
+      - .env
+
+    stdin_open: true
+    tty: true
+
+    # Mount host repository for git operations
+    volumes:
+      - .:/workspace:ro
+
+    working_dir: /workspace
+
+  # Mode 2: Interactive demo environment (reuses same image)
+  demo:
+    image: aisummit-cli:latest
+    container_name: aisummit-demo
+
+    env_file:
+      - .env
+
+    stdin_open: true
+    tty: true
+
+    # Override entrypoint to get a shell
+    entrypoint: /bin/bash
+
+  # Mode 3: Development mode (reuses same image)
+  cli-dev:
+    image: aisummit-cli:latest
+
+    env_file:
+      - .env
+
+    stdin_open: true
+    tty: true
+
+    entrypoint: /bin/bash
+
+    # Mount source code for live development
+    volumes:
+      - ./src:/app/src
+      - .:/workspace:ro
+
+    working_dir: /workspace

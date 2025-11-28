@@ -32,6 +32,7 @@ poetry.lock
 # IDEs
 .vscode/
 .idea/
+.claude/
 *.swp
 *.swo
 *~

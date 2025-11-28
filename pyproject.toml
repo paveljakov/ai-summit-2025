@@ -15,6 +15,7 @@ anthropic = "^0.74.1"  # For Claude integration
 gitpython = "^3.1.45"  # For git operations
 python-dotenv = "^1.2.1"
 langfuse = "^3.9.0"
+qrcode = "^8.2"
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^9.0.1"
